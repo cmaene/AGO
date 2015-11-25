@@ -1,0 +1,7 @@
+(1) Web scraping - 
+Get past 30-days prostitution arrest records from the Chicago Police Department (ASP), and scrape the table contents & save mugshot photos.
+
+(2) Geocoding -
+Geocode both home address and arrested location using ESRI ArcGIS geocoding API. The output is | delimited text file.
+
+Last modified 11/25/2015 
