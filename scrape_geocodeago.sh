@@ -1,13 +1,14 @@
 #!/bin/bash
 
+today=`date +"%m%d%y"`
+
 # get the HTML doc with a form/post and save as html.txt
 curl http://www.chicagopolice.org/ps/list.aspx > html1.txt
 
 # make sure to download formfind.pl from: https://github.com/Chronic-Dev/curl/blob/master/perl/contrib/formfind
 perl formfind.pl < html1.txt > form.txt
 
-# find what form NAMEs are there
-# cat form.txt | grep NAME=
+# cat form.txt | grep NAME=  # find what form NAMEs are there
 
 # In the case of this prostitution arrests, I need the following variables
 VIEWSTATE=`cat form.txt | grep __VIEWSTATE | awk -F'"' '{print $4;}'`
@@ -48,16 +49,15 @@ sed -n 'p' tableheader.txt tableobs.txt > prostitutionarrest.csv
 # download image. Ex: http://www.chicagopolice.org/ps/GetImage.aspx?no=19222145
 while IFS=, read -a line
 do
-    echo "ID is     : ${line[0]}"
     ID=${line[0]}
     curl -o image/ID_$ID.jpg http://www.chicagopolice.org/ps/GetImage.aspx?no=$ID
 done < tableobs.txt
 
 # download a token for the geocoding session - using ArcGIS online developer's geocode2 app credential:
-curl 'https://www.arcgis.com/sharing/oauth2/token?client_id=***********&grant_type=client_credentials&client_secret=*************&expiration=7200&f=pjson' \
+# expiration max 20160 minutes (2 weeks)
+curl 'https://www.arcgis.com/sharing/rest/oauth2/token?client_id=******&grant_type=client_credentials&client_secret=******&expiration=20160&f=pjson' \
 --insecure -s -o token.txt
 
-# or alternatively, the following also does the same:
 # grep extract the line that include "access_token"
 TOKEN=`cat token.txt | grep "access_token" | awk '{print $2}' | sed -e 's/[:|,|"]//g'`
 
@@ -65,18 +65,17 @@ TOKEN=`cat token.txt | grep "access_token" | awk '{print $2}' | sed -e 's/[:|,|"
 # ID,NAME,SEXAGE,HOMEADDRESS,HOMECITY,ARRESTADDRESS,ARRESTDATEYMD,STATUTE,VEHICLEIMPOUNDEDYN
 # 0  1    2      3           4        5             6             7       8
 
-# touch output.txt
+# touch output$today.txt
 header=`cat tableheader.txt`
-header=`echo $header"|homegeocoded|homex|homey|homescore|hometype|arrestgeocoded|arrestx|arresty|arrestscore|arresttype"`
-echo $header > output.txt
-i=1
+header=`echo $header"|homegeocoded|homex|homey|homegeocscore|homegeoctype|arrestgeocoded|arrestx|arresty|arrestgeocscore|arrestgeoctype|traveltimemin|traveldistmile"`
+echo $header > output$today.txt
 while IFS=, read -a line
 do
     input=`echo ${line[0]}"|"${line[1]}"|"${line[2]}"|"${line[3]}"|"${line[4]}"|"${line[5]}"|"${line[6]}"|"${line[7]}"|"${line[8]}"|"`
     homeaddress=`echo ${line[3]} | sed 's/ /+/g'`
     city=`echo ${line[4]} | sed 's/ /+/g'`
     homeaddress=$homeaddress+$city+"IL"
-    wget 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$homeaddress'&f=pjson&token='$TOKEN --no-check-certificate -O homegeocoded.txt
+    curl 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$homeaddress'&f=pjson&token='$TOKEN --insecure -s -o homegeocoded.txt
     geocoded1a=`cat homegeocoded.txt | grep "name" | sed -e 's/\<name\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded1b=`cat homegeocoded.txt | grep '"x":' | sed -e 's/[x|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded1c=`cat homegeocoded.txt | grep '"y":' | sed -e 's/[y|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
@@ -84,14 +83,17 @@ do
     geocoded1e=`cat homegeocoded.txt | grep "Addr_Type" | sed -e 's/\<Addr_Type\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     arrestaddress=`echo ${line[5]} | sed 's/ /+/g'`
     arrestaddress=$arrestaddress+"Chicago"+"IL"
-    wget 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$arrestaddress'&f=pjson&token='$TOKEN --no-check-certificate -O arrestgeocoded.txt
+    curl 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$arrestaddress'&f=pjson&token='$TOKEN --insecure -s -o arrestgeocoded.txt
     geocoded2a=`cat arrestgeocoded.txt | grep "name" | sed -e 's/\<name\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded2b=`cat arrestgeocoded.txt | grep '"x":' | sed -e 's/[x|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded2c=`cat arrestgeocoded.txt | grep '"y":' | sed -e 's/[y|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded2d=`cat arrestgeocoded.txt | grep "Score" | sed -e 's/[Score|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
     geocoded2e=`cat arrestgeocoded.txt | grep "Addr_Type" | sed -e 's/\<Addr_Type\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    temp=`echo $geocoded1a"|"$geocoded1b"|"$geocoded1c"|"$geocoded1d"|"$geocoded1e"|"$geocoded2a"|"$geocoded2b"|"$geocoded2c"|"$geocoded2d"|"$geocoded2e`
-    echo $input$temp >> output.txt
-    i=$(($i+1))
+    curl 'https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve?stops='$geocoded1b','$geocoded1c';'$geocoded2b','$geocoded2c'&f=pjson&token='$TOKEN --insecure -s -o routing.txt
+    routing1a=`cat routing.txt | grep Total_TravelTime | grep -o '[0-9]*\.[0-9]*'`
+    routing1b=`cat routing.txt | grep Total_Miles | grep -o '[0-9]*\.[0-9]*'`
+    routing1a=`printf %.0f $routing1a`  # minutes: round-up to integer minute
+    routing1b=`printf %.1f $routing1b`  # miles: round-up to the first decimal
+    temp=`echo $geocoded1a"|"$geocoded1b"|"$geocoded1c"|"$geocoded1d"|"$geocoded1e"|"$geocoded2a"|"$geocoded2b"|"$geocoded2c"|"$geocoded2d"|"$geocoded2e"|"$routing1a"|"$routing1b`
+    echo $input$temp >> output$today.txt
 done < tableobs.txt
-
