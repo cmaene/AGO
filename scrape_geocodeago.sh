@@ -2,6 +2,10 @@
 
 today=`date +"%m%d%y"`
 
+# -------------------------------------------------------
+# Chicago prostitution arrest website scraping
+# -------------------------------------------------------
+
 # get the HTML doc with a form/post and save as html.txt
 curl http://www.chicagopolice.org/ps/list.aspx > html1.txt
 
@@ -53,9 +57,13 @@ do
     curl -o image/ID_$ID.jpg http://www.chicagopolice.org/ps/GetImage.aspx?no=$ID
 done < tableobs.txt
 
+# -------------------------------------------------------
+# Geocoding and routing/travel time/distance calculation
+# -------------------------------------------------------
+
 # download a token for the geocoding session - using ArcGIS online developer's geocode2 app credential:
 # expiration max 20160 minutes (2 weeks)
-curl 'https://www.arcgis.com/sharing/rest/oauth2/token?client_id=******&grant_type=client_credentials&client_secret=******&expiration=20160&f=pjson' \
+curl 'https://www.arcgis.com/sharing/rest/oauth2/token?client_id=*********&grant_type=client_credentials&client_secret=*********&expiration=20160&f=pjson' \
 --insecure -s -o token.txt
 
 # grep extract the line that include "access_token"
@@ -72,28 +80,33 @@ echo $header > output$today.txt
 while IFS=, read -a line
 do
     input=`echo ${line[0]}"|"${line[1]}"|"${line[2]}"|"${line[3]}"|"${line[4]}"|"${line[5]}"|"${line[6]}"|"${line[7]}"|"${line[8]}"|"`
-    homeaddress=`echo ${line[3]} | sed 's/ /+/g'`
+    home=`echo ${line[3]} | sed 's/ /+/g'`
+    arrest=`echo ${line[5]} | sed 's/ /+/g'`
     city=`echo ${line[4]} | sed 's/ /+/g'`
-    homeaddress=$homeaddress+$city+"IL"
-    curl 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$homeaddress'&f=pjson&token='$TOKEN --insecure -s -o homegeocoded.txt
-    geocoded1a=`cat homegeocoded.txt | grep "name" | sed -e 's/\<name\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded1b=`cat homegeocoded.txt | grep '"x":' | sed -e 's/[x|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded1c=`cat homegeocoded.txt | grep '"y":' | sed -e 's/[y|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded1d=`cat homegeocoded.txt | grep "Score" | sed -e 's/[Score|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded1e=`cat homegeocoded.txt | grep "Addr_Type" | sed -e 's/\<Addr_Type\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    arrestaddress=`echo ${line[5]} | sed 's/ /+/g'`
-    arrestaddress=$arrestaddress+"Chicago"+"IL"
-    curl 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$arrestaddress'&f=pjson&token='$TOKEN --insecure -s -o arrestgeocoded.txt
-    geocoded2a=`cat arrestgeocoded.txt | grep "name" | sed -e 's/\<name\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded2b=`cat arrestgeocoded.txt | grep '"x":' | sed -e 's/[x|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded2c=`cat arrestgeocoded.txt | grep '"y":' | sed -e 's/[y|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded2d=`cat arrestgeocoded.txt | grep "Score" | sed -e 's/[Score|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    geocoded2e=`cat arrestgeocoded.txt | grep "Addr_Type" | sed -e 's/\<Addr_Type\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
-    curl 'https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve?stops='$geocoded1b','$geocoded1c';'$geocoded2b','$geocoded2c'&f=pjson&token='$TOKEN --insecure -s -o routing.txt
-    routing1a=`cat routing.txt | grep Total_TravelTime | grep -o '[0-9]*\.[0-9]*'`
-    routing1b=`cat routing.txt | grep Total_Miles | grep -o '[0-9]*\.[0-9]*'`
-    routing1a=`printf %.0f $routing1a`  # minutes: round-up to integer minute
-    routing1b=`printf %.1f $routing1b`  # miles: round-up to the first decimal
-    temp=`echo $geocoded1a"|"$geocoded1b"|"$geocoded1c"|"$geocoded1d"|"$geocoded1e"|"$geocoded2a"|"$geocoded2b"|"$geocoded2c"|"$geocoded2d"|"$geocoded2e"|"$routing1a"|"$routing1b`
+    home=$home+$city+"IL"
+    arrest=$arrest+"Chicago"+"IL"
+    typeset -A locations           # loudly declare/create an associative array
+    #locations[home]=`echo $home`; locations[arrest]=`echo $arrest`   # one way of doing associative array assignment
+    locations=(                    # this is a compound assignment
+        [home]=`echo $home`
+        [arrest]=`echo $arrest`
+    )
+    for loc in "${!locations[@]}"  # geocode twice for home and arrest locations, enumerate all indices (home/arrest)
+    do
+        address="${locations[$loc]}"
+        curl 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?text='$address'&f=pjson&token='$TOKEN --insecure -s -o $loc.txt
+        # dynamic/looping assignment is tricky - needed to loudly declare them, typeset for multiple words with space, eval for one word content
+        typeset geoc1$loc="`cat $loc.txt | grep "name" | sed -e 's/\<name\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
+        eval geoc2$loc=`cat $loc.txt | grep '"x":' | sed -e 's/[x|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
+        eval geoc3$loc=`cat $loc.txt | grep '"y":' | sed -e 's/[y|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
+        eval geoc4$loc=`cat $loc.txt | grep "Score" | sed -e 's/[Score|:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
+        eval geoc5$loc=`cat $loc.txt | grep "Addr_Type" | sed -e 's/\<Addr_Type\>//g' -e 's/[:|"|,]//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`
+    done
+    curl 'https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve?stops='$geoc2home','$geoc3home';'$geoc2arrest','$geoc3arrest'&f=pjson&token='$TOKEN --insecure -s -o routing.txt
+    routing1=`cat routing.txt | grep Total_TravelTime | grep -o '[0-9]*\.[0-9]*'`
+    routing2=`cat routing.txt | grep Total_Miles | grep -o '[0-9]*\.[0-9]*'`
+    routing1=`printf %.0f $routing1`  # minutes: round-up to integer minute
+    routing2=`printf %.1f $routing2`  # miles: round-up to the first decimal
+    temp=`echo $geoc1home"|"$geoc2home"|"$geoc3home"|"$geoc4home"|"$geoc5home"|"$geoc1arrest"|"$geoc2arrest"|"$geoc3arrest"|"$geoc4arrest"|"$geoc5arrest"|"$routing1"|"$routing2`
     echo $input$temp >> output$today.txt
 done < tableobs.txt
